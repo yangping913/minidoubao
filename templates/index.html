@@ -1,0 +1,23 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>迷你豆包 - 优化版</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="chat-container">
+        <h1>迷你豆包 🥠 优化版</h1>
+        <div id="chat-box" class="chat-box">
+            <!-- 聊天消息将在这里显示 -->
+        </div>
+        <div class="input-area">
+            <input type="text" id="user-input" placeholder="和豆包聊点什么吧..." autocomplete="off">
+            <button>发送</button>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
