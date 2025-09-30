@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>迷你豆包 - 智能聊天助手</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="chat-container">
+        <!-- 模型状态栏 -->
+        <div class="model-status-bar">
+            <div class="model-info">
+                <span class="model-label">当前模型:</span>
+                <span id="current-model" class="model-indicator">检测中...</span>
+                <div class="model-status-icons">
+                    <span id="deepseek-status" class="status-icon" title="DeepSeek状态">🤖</span>
+                    <span id="ollama-status" class="status-icon" title="Ollama状态">🦙</span>
+                </div>
+            </div>
+            <div class="model-controls">
+                <select id="model-selector">
+                    <option value="auto">自动选择 (推荐)</option>
+                    <option value="deepseek">DeepSeek优先</option>
+                    <option value="ollama">Ollama优先</option>
+                </select>
+            </div>
+        </div>
+
+        <h1>迷你豆包 🥠 智能聊天助手</h1>
+
+        <div id="chat-box" class="chat-box">
+            <div class="message system">
+                <small>🔧 系统初始化完成，等待您的第一条消息...</small>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" id="user-input" placeholder="和豆包聊点什么吧..." autocomplete="off">
+            <button>发送</button>
+        </div>
+
+        <div class="system-info">
+            <small>请求数: <span id="request-count">0</span> | 运行时间: <span id="uptime">0s</span></small>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
