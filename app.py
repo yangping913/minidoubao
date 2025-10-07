@@ -13,6 +13,7 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'minidoubao-secret-key')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '').strip()
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
+OLLAMA_MODEL_NAME = os.getenv('OLLAMA_MODEL_NAME', 'qwen:0.5b').strip()  # 关键新增行
 
 
 # ===== 跨域支持 =====
@@ -276,8 +277,9 @@ def stream_chat():
                 context_prompt = context_manager.build_context_prompt(message)
 
                 # 构建Ollama API请求
+                # 修改后代码（读取配置，无硬编码）
                 ollama_data = {
-                    "model": "qwen3:0.6b",  # 使用您安装的模型
+                    "model": OLLAMA_MODEL_NAME,  # 替换为配置变量，后续换模型改环境变量即可
                     "prompt": context_prompt + "\n\n用户消息: " + message,
                     "stream": True
                 }

@@ -51,3 +51,5 @@ logs/
 # 环境配置
 .env
 .env.local
+
+# 临时文件
