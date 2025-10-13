@@ -1,20 +1,22 @@
-from flask import Flask, request, jsonify, Response, render_template
+from flask import Flask, request, jsonify, Response
 import time
 import threading
 import json
 import os
 import requests
 from datetime import datetime
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'minidoubao-secret-key')
 
 # ===== 配置信息 =====
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '').strip()
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-OLLAMA_API_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL_NAME = os.getenv('OLLAMA_MODEL_NAME', 'qwen:0.5b').strip()  # 关键新增行
-
+DEEPSEEK_API_URL = os.getenv('DEEPSEEK_API_URL', 'https://api.deepseek.com/v1/chat/completions')
+OLLAMA_API_URL = os.getenv('OLLAMA_API_URL', 'http://localhost:11434/api/generate')
+OLLAMA_MODEL_NAME = os.getenv('OLLAMA_MODEL_NAME', 'qwen:0.5b').strip()
+STREAMLIT_FRONTEND_URL = os.getenv('STREAMLIT_FRONTEND_URL', 'http://localhost:8501')
 
 # ===== 跨域支持 =====
 @app.after_request
@@ -24,7 +26,6 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     return response
-
 
 # ===== 核心业务模块 =====
 class ModelManager:
@@ -58,7 +59,7 @@ class ModelManager:
 
             # 检查Ollama状态
             try:
-                response = requests.get("http://localhost:11434/api/tags", timeout=5)
+                response = requests.get(f"{OLLAMA_API_URL.replace('/api/generate', '')}/api/tags", timeout=5)
                 self.model_status['ollama'] = response.status_code == 200
             except:
                 self.model_status['ollama'] = False
@@ -100,13 +101,12 @@ class ModelManager:
         with self.lock:
             self.request_count += 1
 
-
 class NaturalContextManager:
-    """自然语言上下文管理器 - 完全无硬编码"""
+    """自然语言上下文管理器"""
 
     def __init__(self):
         self.conversation_history = []
-        self.max_history = 10
+        self.max_history = int(os.getenv('MAX_CONVERSATION_HISTORY', '10'))
 
     def add_message(self, role, content):
         """添加消息到对话历史"""
@@ -121,20 +121,20 @@ class NaturalContextManager:
             self.conversation_history = self.conversation_history[-self.max_history:]
 
     def build_context_prompt(self, current_message):
-        """构建上下文提示词 - 完全无硬编码"""
+        """构建上下文提示词"""
         # 基础系统提示
         system_prompt = """你是一个有帮助的AI助手。请根据完整的对话历史提供准确、连贯的回答。
 
 对话指南：
 1. 仔细阅读和理解整个对话历史
-2. 如果用户提到过个人信息（如名字、地点、偏好等），请自然地使用这些信息
+2. 如果用户提到过个人信息，请自然地使用这些信息
 3. 保持回答与之前对话的一致性
 4. 如果用户的问题需要上下文信息，请参考历史对话
 
 当前对话历史："""
 
-        # 添加对话历史（无关键词过滤）
-        for i, msg in enumerate(self.conversation_history[-5:]):  # 最近5条消息
+        # 添加对话历史
+        for i, msg in enumerate(self.conversation_history[-5:]):
             system_prompt += f"\n{msg['role']}: {msg['content']}"
 
         system_prompt += f"\n\n当前用户消息: {current_message}"
@@ -146,25 +146,36 @@ class NaturalContextManager:
         """获取最近的对话消息"""
         return self.conversation_history[-count:] if self.conversation_history else []
 
+    def clear_history(self):
+        """清空对话历史"""
+        self.conversation_history = []
 
 # ===== 全局初始化 =====
 model_manager = ModelManager()
 context_manager = NaturalContextManager()
 
-
 # ===== 路由实现 =====
 @app.route('/')
-def index():
-    """根路由 - 返回前端页面"""
-    return render_template('index.html')
-
+def api_root():
+    """API根端点 - 返回服务信息"""
+    return jsonify({
+        "service": "MiniDoubao Backend API",
+        "version": "1.0.0",
+        "frontend": "Streamlit",
+        "endpoints": {
+            "GET /api/models/status": "获取模型状态",
+            "POST /api/models/switch": "切换模型偏好",
+            "POST /api/stream-chat": "流式聊天接口",
+            "GET /api/debug/context": "调试对话历史",
+            "GET /health": "健康检查"
+        }
+    })
 
 @app.route('/api/models/status', methods=['GET'])
 def get_model_status():
     """获取模型状态"""
     model_manager.update_status()
     return jsonify(model_manager.get_status())
-
 
 @app.route('/api/models/switch', methods=['POST'])
 def switch_model():
@@ -182,10 +193,9 @@ def switch_model():
         })
     return jsonify({"error": "无效的模型选择"}), 400
 
-
 @app.route('/api/stream-chat', methods=['POST'])
 def stream_chat():
-    """处理流式聊天请求 - 无硬编码版本"""
+    """处理流式聊天请求"""
     data = request.get_json()
     if not data or 'message' not in data:
         return jsonify({"error": "缺少消息内容"}), 400
@@ -215,15 +225,13 @@ def stream_chat():
             # 构建自然语言上下文提示
             context_prompt = context_manager.build_context_prompt(message)
 
-            # 根据选择的模型调用API
             if selected_model == 'deepseek' and DEEPSEEK_API_KEY:
-                # DeepSeek API调用 - 保持不变
+                # DeepSeek API调用
                 headers = {
                     'Authorization': f'Bearer {DEEPSEEK_API_KEY}',
                     'Content-Type': 'application/json'
                 }
 
-                # 使用自然语言上下文提示
                 messages = [{"role": "system", "content": context_prompt}]
 
                 data = {
@@ -246,7 +254,6 @@ def stream_chat():
                     yield f"data: {json.dumps({'error': f'API错误: {response.status_code}'})}\n\n"
                     return
 
-                # 处理DeepSeek流式响应 - 保持不变
                 full_response = ""
                 for line in response.iter_lines():
                     if line:
@@ -273,19 +280,14 @@ def stream_chat():
                 yield "data: [DONE]\n\n"
 
             else:
-                # Ollama模型处理 - 实现真正的流式响应
-                context_prompt = context_manager.build_context_prompt(message)
-
-                # 构建Ollama API请求
-                # 修改后代码（读取配置，无硬编码）
+                # Ollama模型处理
                 ollama_data = {
-                    "model": OLLAMA_MODEL_NAME,  # 替换为配置变量，后续换模型改环境变量即可
-                    "prompt": context_prompt + "\n\n用户消息: " + message,
+                    "model": OLLAMA_MODEL_NAME,
+                    "prompt": context_prompt,
                     "stream": True
                 }
 
                 try:
-                    # 调用Ollama API
                     response = requests.post(
                         OLLAMA_API_URL,
                         json=ollama_data,
@@ -297,7 +299,6 @@ def stream_chat():
                         yield f"data: {json.dumps({'error': f'Ollama API错误: {response.status_code}'})}\n\n"
                         return
 
-                    # 处理Ollama流式响应
                     full_response = ""
                     for line in response.iter_lines():
                         if line:
@@ -338,6 +339,11 @@ def debug_context():
         "recent_messages": context_manager.get_recent_messages(5)
     })
 
+@app.route('/api/context/clear', methods=['POST'])
+def clear_context():
+    """清空对话历史"""
+    context_manager.clear_history()
+    return jsonify({"status": "success", "message": "对话历史已清空"})
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -349,7 +355,6 @@ def health_check():
         "conversation_count": len(context_manager.conversation_history)
     })
 
-
 # ===== 后台任务 =====
 def background_status_updater():
     """后台状态更新线程"""
@@ -357,17 +362,14 @@ def background_status_updater():
         time.sleep(30)
         model_manager.update_status()
 
-
 # ===== 错误处理 =====
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"error": "端点不存在"}), 404
 
-
 @app.errorhandler(500)
 def server_error(error):
     return jsonify({"error": "服务器内部错误"}), 500
-
 
 # ===== 启动应用 =====
 if __name__ == '__main__':
@@ -382,15 +384,17 @@ if __name__ == '__main__':
     else:
         print("✅ API密钥配置正常")
 
-    print("🚀 迷你豆包后端服务启动成功")
-    print("📡 服务地址: http://localhost:5000")
-    print("🧠 上下文记忆: 自然语言模式（无硬编码）")
-    print("🔧 可用API端点:")
-    print("   GET  /              - 前端界面")
+    print("🚀🚀 迷你豆包后端服务启动成功")
+    print("📡📡 服务地址: http://localhost:5000")
+    print("🎨🎨 前端框架: Streamlit")
+    print("🧠🧠 上下文记忆: 自然语言模式")
+    print("🔧🔧 可用API端点:")
+    print("   GET  /              - API信息")
     print("   GET  /api/models/status    - 获取模型状态")
     print("   GET  /health        - 健康检查")
     print("   GET  /api/debug/context - 调试对话历史")
     print("   POST /api/models/switch   - 切换模型偏好")
     print("   POST /api/stream-chat     - 流式聊天接口")
+    print("   POST /api/context/clear   - 清空对话历史")
 
     app.run(host='0.0.0.0', port=5000, debug=False)
